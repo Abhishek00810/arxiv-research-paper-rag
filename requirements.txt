@@ -1,0 +1,15 @@
+  langchain                                                                                                                                                             
+  langchain-community
+  langchain-experimental
+  langgraph
+  qdrant-client
+  fastembed
+  sentence-transformers
+  langchain-groq
+  ragas                                                                                                                                                                 
+  langfuse
+  fastapi                                                                                                                                                               
+  uvicorn         
+  pymupdf
+  python-dotenv
+  datasets

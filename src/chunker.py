@@ -1,7 +1,7 @@
 from langchain_experimental.text_splitter import SemanticChunker
 from langchain_community.embeddings import FastEmbedEmbeddings                                                               
                                                                                                                                
-embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-m3")
+embeddings = FastEmbedEmbeddings(model_name="BAAI/bge-large-en-v1.5")
 
 def chunk_pages(pages: list[dict]) -> list[dict]:
     chunker = SemanticChunker(embeddings)

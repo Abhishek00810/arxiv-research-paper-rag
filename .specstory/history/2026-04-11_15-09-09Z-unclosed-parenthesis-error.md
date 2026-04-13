@@ -165,3 +165,187 @@ embeddings = HuggingFaceEmbeddings (
     encode_kwargs = {"normalize_embeddings": True},
 )
 ```
+
+---
+
+_**User**_
+
+what models am i using in indexer.py
+
+---
+
+_**Agent (default)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/abhishekdadwal/nothing/real-service-analytics/agent_arxivpaper/src/indexer.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (default)**_
+
+In `indexer.py` you wire up two **fastembed** models:
+
+1. **Dense embeddings** — `TextEmbedding("BAAI/bge-m3")` (BGE-M3, 1024-dim dense vectors; matches your `VectorParams(size=1024, ...)`).
+2. **Sparse / BM25-style** — `SparseTextEmbedding("Qdrant/bm25")` (Qdrant’s BM25 sparse model for the `"bm25"` sparse vector slot in the collection config).
+
+Only the **BGE-M3** path is used in `index_chunks` today (`embeddings.embed(texts)` → `vector=` on each point). `sparse_model` is created but not called in this file, so sparse vectors are not being written to Qdrant yet despite `sparse_vectors_config`.
+
+---
+
+_**User**_
+
+how cai i check qdrant resutl for my query like how can I search dense results and sparse results
+
+---
+
+_**Agent (default)**_
+
+Checking your Qdrant setup so we can give accurate steps.
+
+
+
+_**Agent (default)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/abhishekdadwal/nothing/real-service-analytics/agent_arxivpaper/src/retriever.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (default)**_
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2">
+<details><summary>Tool use: **read_file_v2** • Read file: /Users/abhishekdadwal/nothing/real-service-analytics/agent_arxivpaper/src/indexer.py</summary>
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (default)**_
+
+<think><details><summary>Thought Process</summary>
+The indexer has been updated. The indexer uses named vectors called `dense` and `bm25`. The collection configuration defines these vectors using `vectors_config` as a dictionary mapping vector names to their parameters. For example, `dense` might be defined with size 1024 and cosine distance, while `bm25` would be a sparse vector. This allows storing multiple vector types per document in Qdrant. When using named vectors in Qdrant, the default vector name is empty or "default" if only `VectorParams` is specified. To properly define named vectors like `"dense"` and `"bm25"`, use:
+
+- `vectors_config={"dense": VectorParams(size=1024, distance=Distance.COSINE)}`
+- `sparse_vectors_config={"bm25": SparseVectorParams()}`
+
+This ensures correct indexing and searching for both dense and sparse vectors. For dense search, use `query_points` or `search` with `query_vector` and specify the vector name. For sparse search, use `query_points` with a sparse query.
+
+In Qdrant 1.7+, the unified API uses `query_points` with different query types.
+
+- **Dense**: Embed query with BGE-M3, then use `client.query_points` with the named vector.
+- **Sparse**: Use `client.query_points` with sparse vector parameters. To perform a search in Qdrant, use the `search` method with the named vector and limit, such as `search(collection_name="arxiv_papers", query_vector=("dense", embedding), limit=5)`. For sparse vectors, specify the sparse vector name in the query.
+
+For dense search:
+- Use `client.search` with `query_vector=("dense", vector)` and set `limit`.
+
+For sparse search:
+- Use `client.search` with `query_vector=rest.SparseVector(...)` and `sparse_vector_name="bm25"`.
+
+In Qdrant Python client v1, for sparse-only search, use `client.query_points` with appropriate sparse vector parameters.</details></think>
+
+_**Agent (default)**_
+
+File not found
+
+<tool-use data-tool-type="read" data-tool-name="read_file_v2"><details>
+<summary>Tool use: **read_file_v2**</summary>
+
+</details></tool-use>
+
+_**Agent (default)**_
+
+<tool-use data-tool-type="search" data-tool-name="glob_file_search">
+<details>
+<summary>Tool use: **glob_file_search** • Searched codebase "" • **0** results in **1** directory</summary>
+
+Directory: **/Users/abhishekdadwal/nothing/real-service-analytics/agent_arxivpaper** (0 files)
+
+</details>
+</tool-use>
+
+<tool-use data-tool-type="search" data-tool-name="glob_file_search"><details>
+<summary>Tool use: **glob_file_search**</summary>
+
+</details></tool-use>
+
+_**Agent (default)**_
+
+<think><details><summary>Thought Process</summary>
+I'll provide a practical answer covering:
+- 1. Qdrant Web UI / REST and Python with qdrant-client are the main interfaces. Their indexer uses collection `arxiv_papers` with named vectors `dense` and `bm25` in upsert operations. 
+
+The PointStruct format includes:
+- id: point_id
+- vector: for dense vectors
+- sparse_vectors: for sparse vectors
+
+Note: In Qdrant, dense and sparse vectors may be separate keys rather than nested within a single vector dictionary. In Qdrant's PointStruct, dense named vectors like "dense" should be placed in the `vector` dictionary, while sparse vectors such as "bm25" require a separate field. The newer Python client expects sparse vectors in a dedicated sparse_vectors parameter rather than within the main vector dictionary.
+
+Key points:
+- Dense vectors go in the `vector` dict with named keys
+- Sparse vectors use separate `sparse_vectors` field
+- PointStruct format varies between Qdrant versions
+- Named vectors like "dense" and "bm25" are handled differently in upsert operations When searching in Qdrant, there are three main approaches:
+
+- **Dashboard**: Access via localhost:6333/dashboard for visual querying
+- **curl**: Use POST requests to /collections/arxiv_papers/points/query or legacy /points/search endpoints
+- **Python**: Implement separate queries for dense and sparse vectors
+
+For Qdrant 1.10+, the unified query API supports both dense and sparse vectors in a single call using the query_points method.</details></think>
+
+_**Agent (default)**_
+
+Here is a practical way to **inspect** and **run** dense vs sparse search against your stack (`arxiv_papers`, BGE-M3 dense, `Qdrant/bm25` sparse).
+
+## 1. See what is stored (no “search” yet)
+
+- **Web UI:** open `http://localhost:6333/dashboard` → your collection → browse / scroll points and payloads.
+- **API:** `POST /collections/arxiv_papers/points/scroll` returns raw points (vectors + payload) so you can confirm IDs and payloads.
+
+That answers “what’s in Qdrant?” — not “what matches this query?”.
+
+## 2. Dense search (same space you indexed)
+
+1. Embed the query with the **same** dense model you use in `indexer.py`: `TextEmbedding("BAAI/bge-m3")` → one vector (length 1024, cosine).
+2. Ask Qdrant for nearest neighbors on the **dense** vector name.
+
+With current `qdrant-client`, the usual pattern is `query_points` + `using` so Qdrant knows which named vector to use:
+
+```python
+from qdrant_client import QdrantClient, models
+from fastembed import TextEmbedding
+
+client = QdrantClient(host="localhost", port=6333)
+dense = TextEmbedding("BAAI/bge-m3")
+
+q = "What is PagedAttention?"
+qv = list(dense.embed([q]))[0].tolist()
+
+res = client.query_points(
+    collection_name="arxiv_papers",
+    query=qv,           # dense embedding
+    using="dense",      # must match the name in your collection / upsert
+    limit=10,
+    with_payload=True,
+)
+for p in res.points:
+    print(p.id, p.score, p.payload.get("title"), p.payload.get("text", "")[:120])
+```
+
+If `using="dense"` errors, your collection was created with a **default** unnamed vector — then your schema and upsert names need to match (worth fixing once
