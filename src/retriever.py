@@ -12,22 +12,24 @@ def retrieve(query: str) -> list[dict]:
     #this is function all the other, two returns top 5 chunks
     #dense results
     query_vector = list(dense_model.embed([query]))[0].tolist()
-    dense_results = client.search(
-        collection_name = "arxiv_papers",
-        query_vector=("dense", query_vector),
-        limit = 50
-    )
+    dense_results = client.query_points(
+        collection_name="arxiv_papers",
+        query=query_vector,
+        using="dense",
+        limit=50
+    ).points
 
     # sparse search
     query_sparse = list(sparse_model.embed([query]))[0]
-    sparse_results = client.search(                                                                                                           
-      collection_name="arxiv_papers",
-      query_vector=("bm25", models.SparseVector(                                                                                            
-          indices=query_sparse.indices.tolist(),                                                                                            
-          values=query_sparse.values.tolist()
-      )),                                                                                                                                   
-      limit=50    
-    )    
+    sparse_results = client.query_points(
+        collection_name="arxiv_papers",
+        query=models.SparseVector(
+            indices=query_sparse.indices.tolist(),
+            values=query_sparse.values.tolist()
+        ),
+        using="bm25",
+        limit=50
+    ).points    
 
     merged_result = rrf(dense_results, sparse_results)
     
