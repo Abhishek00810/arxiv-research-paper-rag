@@ -2,9 +2,12 @@ from typing import TypedDict, List
 from dotenv import load_dotenv
 from langgraph.graph import StateGraph, END
 from langchain_groq import ChatGroq
+from langchain_openai import ChatOpenAI
 from retriever import retrieve
 import json
 import re
+import os
+import time
 class AgentState(TypedDict):
     query: str
     original_query: str
@@ -17,24 +20,17 @@ class AgentState(TypedDict):
 
 load_dotenv()
 
-
-llm = ChatGroq(model="llama-3.3-70b-versatile")
+llm = ChatGroq(model="llama-3.3-70b-versatile", request_timeout=10)
+llm_fallback = ChatGroq(model="meta-llama/llama-4-scout-17b-16e-instruct", request_timeout=10)
+minimax_llm = ChatOpenAI(
+    model="MiniMax-M2",
+    api_key=os.getenv("MINIMAX_API_KEY"),
+    base_url="https://api.minimax.io/v1"
+)
 
 
 def query_analyzer_node(state: AgentState) -> dict:
-    query = state["query"]
-    response = llm.invoke(f"""
-      Classify this research question as simple or complex.                                                                                                             
-      Simple: single source, factual                        
-      Complex: requires multiple papers, comparison                                                                                                                     
-      
-    Question: {query}       
-
-    Respond with JSON: {{"type": "simple" or "complex", "reason": "..."}}   
-    """                                  
-    )
-
-    return {"original_query": query}
+    return {"original_query": state["query"]}
 
 
 def retriever_node(state: AgentState) -> dict:
@@ -48,23 +44,32 @@ def grader_node(state: AgentState) -> dict:
 
     chunks_text = "\n\n".join([c["text"] for c in chunks])
 
-    response = llm.invoke(f"""
-          You are evaluating retrieved context for a research question.                                                                                                   
-                                                                                                                                                                        
+    prompt = f"""
+          You are evaluating retrieved context for a research question.
+
       Question: {query}
-                                                                                                                                                                        
-      Retrieved chunks:                                                                                                                                                 
-      {chunks_text}                                                                                                                                                   
-                                                                                                                                                                        
-      Can these chunks ALONE answer the question completely and accurately?                                                                                           
-      Do not use any external knowledge. Only what is in these chunks.                                                                                                
-                                                                                                                                                                        
-      Respond with JSON: {{"decision": "sufficient" or "insufficient", "reason": "one sentence"}}    
+
+      Retrieved chunks:
+      {chunks_text}
+
+      Can these chunks ALONE answer the question completely and accurately?
+      Do not use any external knowledge. Only what is in these chunks.
+
+      Respond with JSON: {{"decision": "sufficient" or "insufficient", "reason": "one sentence"}}
     """
-    )
+
+    t0 = time.time()
+    try:
+        response = llm.invoke(prompt)
+    except Exception:
+        try:
+            response = llm_fallback.invoke(prompt)
+        except Exception:
+            response = minimax_llm.invoke(prompt)
+    print(f"[timing] grader LLM: {time.time() - t0:.2f}s")
 
     try:
-        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)  
+        json_match = re.search(r'\{.*\}', response.content, re.DOTALL)
         result = json.loads(json_match.group())
         decision = result["decision"]
         reason = result["reason"]
@@ -72,7 +77,7 @@ def grader_node(state: AgentState) -> dict:
     except:
         decision = "insufficient"
         reason = "failed to parse grader response"
-    
+
     return {
         "relevance_decision": decision,
         "relevance_reason": reason
@@ -84,18 +89,27 @@ def rewriter_node(state: AgentState) -> dict:
     current_query = state["query"]
     reason = state["relevance_reason"]
     retry_count = state["retry_count"]
-    response = llm.invoke(f"""
-      A retrieval attempt failed to find relevant context.                                                                                                              
-                                                          
-      Original question: {original_query}                                                                                                                               
-      Failed query: {current_query}                                                                                                                                   
-      Why it failed: {reason}                                                                                                                                           
-                                                                                                                                                                      
+    prompt = f"""
+      A retrieval attempt failed to find relevant context.
+
+      Original question: {original_query}
+      Failed query: {current_query}
+      Why it failed: {reason}
+
       Rewrite the query to target the missing information.
-      Be more specific. Use different terminology.                                                                                                                      
+      Be more specific. Use different terminology.
       Return only the rewritten query, nothing else.
     """
-    )
+
+    t0 = time.time()
+    try:
+        response = llm.invoke(prompt)
+    except Exception:
+        try:
+            response = llm_fallback.invoke(prompt)
+        except Exception:
+            response = minimax_llm.invoke(prompt)
+    print(f"[timing] rewriter LLM: {time.time() - t0:.2f}s")
 
     return {
         "query": response.content.strip(),
@@ -103,7 +117,6 @@ def rewriter_node(state: AgentState) -> dict:
     }
 
 def generator_node(state: AgentState) -> dict:
-    query = state["query"]
     original_query = state["original_query"]
     chunks = state["retrieved_chunks"]
 
@@ -112,7 +125,7 @@ def generator_node(state: AgentState) -> dict:
           for c in chunks                                                                                                                                               
       ])              
 
-    response = llm.invoke(f"""
+    prompt = f"""
       Answer the research question using ONLY the provided context.
       Do not use any knowledge outside these chunks.
       If context is insufficient, say so explicitly.
@@ -125,10 +138,20 @@ def generator_node(state: AgentState) -> dict:
       Provide a clear, accurate answer.
       End with:
       Sources: [list each paper title and section used]
-      """)     
+      """
 
-    sources = [f"{c['title']} | {c['section']}" for c in chunks]   
-    
+    t0 = time.time()
+    try:
+        response = llm.invoke(prompt)
+    except Exception:
+        try:
+            response = llm_fallback.invoke(prompt)
+        except Exception:
+            response = minimax_llm.invoke(prompt)
+    print(f"[timing] generator LLM: {time.time() - t0:.2f}s")
+
+    sources = [f"{c['title']} | {c['section']}" for c in chunks]
+
     return {
         "final_answer": response.content,
         "sources": sources

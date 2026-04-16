@@ -1,0 +1,62 @@
+[
+    {
+        "question": "What is PagedAttention and what problem does it solve?",
+        "ground_truth": "PagedAttention is an attention algorithm inspired by virtual memory and paging in operating systems. It solves memory fragmentation and waste in the KV cache during LLM serving. Traditional systems pre-allocate contiguous memory for the KV cache, causing internal and external fragmentation. PagedAttention partitions the KV cache into fixed-size blocks stored in non-contiguous physical memory, enabling near-zero memory waste and flexible KV cache sharing within and across requests."
+    },
+    {
+        "question": "How does Firecracker achieve strong isolation between VMs?",
+        "ground_truth": "Firecracker achieves strong isolation using hardware virtualization via Linux KVM, a minimal VMM with ~50k lines of Rust code, a process-per-VM model, side-channel hardening, and seccomp-bpf filters. The small trusted computing base reduces attack surface. Firecracker does not emulate legacy devices or BIOS, further minimizing complexity. Each MicroVM runs as a separate Linux process, providing OS-level isolation in addition to hardware virtualization boundaries."
+    },
+    {
+        "question": "What is the core idea behind LoRA fine-tuning?",
+        "ground_truth": "LoRA freezes pre-trained model weights and injects trainable low-rank decomposition matrices into each Transformer layer. Instead of updating the full weight matrix W, it represents updates as delta_W = BA where B and A are low-rank matrices with rank r much smaller than the original dimensions. This reduces trainable parameters by up to 10,000x, cuts VRAM usage by ~2/3, and adds no inference latency since the low-rank matrices can be merged with frozen weights after training."
+    },
+    {
+        "question": "What problem does Flash Attention solve compared to standard attention?",
+        "ground_truth": "Standard attention has O(N^2) memory complexity because it materializes the full N×N attention matrix in HBM (GPU high bandwidth memory). FlashAttention avoids this by using tiling: it splits inputs into blocks, loads them into fast on-chip SRAM, and computes attention incrementally without ever writing the full attention matrix to HBM. It also uses recomputation in the backward pass instead of storing intermediate activations. This reduces HBM accesses from O(Nd + N^2) to O(N^2d^2M^-1), achieving 2-4x speedup and linear memory complexity."
+    },
+    {
+        "question": "What is retrieval-augmented generation (RAG)?",
+        "ground_truth": "RAG combines a parametric memory (pre-trained seq2seq generator) with a non-parametric memory (dense vector index of a corpus). A neural retriever encodes the query and retrieves top-K relevant documents via Maximum Inner Product Search. The generator conditions on both the query and retrieved documents to produce the output. The retriever and generator are fine-tuned end-to-end. RAG enables models to access up-to-date knowledge without retraining and reduces hallucination by grounding generation in retrieved evidence."
+    },
+    {
+        "question": "How does Flash Attention reduce memory complexity?",
+        "ground_truth": "FlashAttention reduces memory from O(N^2) to O(N) by never materializing the full attention matrix. It uses tiling to process input blocks in on-chip SRAM, computing softmax incrementally using the online softmax trick. The backward pass uses recomputation: it stores only the softmax normalization factor from the forward pass and recomputes attention on-chip rather than reading stored intermediate matrices from HBM. Total HBM accesses are O(N^2d^2M^-1) versus standard attention's Omega(Nd + N^2)."
+    },
+    {
+        "question": "What are the tradeoffs between LoRA and full fine-tuning?",
+        "ground_truth": "LoRA advantages: 10,000x fewer trainable parameters, ~2/3 less VRAM, 25% faster training throughput on GPT-3 175B, checkpoint size reduced from 350GB to 35MB, and enables quick task-switching by swapping only the small adapter matrices. LoRA limitations: does not straightforwardly support batching inputs from different tasks with different adapters in a single forward pass, and may slightly underperform full fine-tuning on some tasks. In practice, LoRA matches or exceeds full fine-tuning quality on RoBERTa, DeBERTa, GPT-2, and GPT-3 benchmarks."
+    },
+    {
+        "question": "How does Firecracker's design differ from traditional containers?",
+        "ground_truth": "Traditional containers use Linux namespaces, cgroups, and seccomp-bpf for isolation but share the host kernel, providing weaker security boundaries. Firecracker uses hardware virtualization (KVM) to provide VM-level isolation while maintaining container-like startup speed (<125ms) and density. Firecracker's VMM is minimal: no BIOS, no legacy device emulation, no PCI, ~50k lines of Rust versus QEMU's millions of lines. Memory overhead is under 5MB per MicroVM. The tradeoff is stronger isolation at the cost of slightly higher overhead versus containers."
+    },
+    {
+        "question": "What is the role of the KV cache in LLM inference?",
+        "ground_truth": "During autoregressive LLM inference, each new token attends to all previous tokens. The KV cache stores the key and value tensors from all previous tokens so they don't need to be recomputed at each decoding step. Without caching, inference cost scales quadratically with sequence length. The KV cache grows dynamically as tokens are generated, has unpredictable lifetime, and can be very large (tens of GBs for long sequences or large batches). Managing KV cache memory efficiently is a primary bottleneck in LLM serving throughput."
+    },
+    {
+        "question": "How does vLLM use PagedAttention to improve throughput compared to existing systems?",
+        "ground_truth": "vLLM uses PagedAttention to manage KV cache as fixed-size blocks in non-contiguous memory, eliminating fragmentation that wastes 60-80% of memory in prior systems. It implements a block table mapping logical to physical KV blocks, similar to virtual memory page tables. This enables high memory utilization, copy-on-write KV sharing for parallel sampling, and prefix caching. By fitting more requests in memory simultaneously, vLLM achieves 2-4x higher throughput than FasterTransformer and Orca at the same latency targets."
+    },
+    {
+        "question": "How do the memory management approaches in Firecracker and PagedAttention address similar problems at different layers?",
+        "ground_truth": "Both solve the same fundamental problem — efficient management of dynamically-sized memory with unpredictable lifetimes — at different abstraction layers. Firecracker manages physical memory for MicroVMs at the hypervisor layer, using KVM memory ballooning and careful overhead minimization to keep per-VM memory cost under 5MB. PagedAttention manages GPU memory for KV caches at the ML serving layer, borrowing virtual memory paging concepts to eliminate fragmentation. Both draw from OS virtual memory principles: Firecracker for VM isolation, PagedAttention explicitly inspired by OS paging to solve GPU memory fragmentation."
+    },
+    {
+        "question": "What is the conceptual relationship between the original attention mechanism and Flash Attention's optimization?",
+        "ground_truth": "The original attention mechanism (Attention Is All You Need) computes softmax(QK^T/sqrt(d))V by materializing the full N×N attention matrix, which is mathematically exact but memory-inefficient. FlashAttention computes the identical mathematical result without materializing that matrix. It exploits the fact that softmax can be computed incrementally using the online softmax algorithm, processing input in tiles that fit in SRAM. FlashAttention is not an approximation — it produces bit-for-bit identical output to standard attention while reducing memory from O(N^2) to O(N) and cutting HBM accesses significantly."
+    },
+    {
+        "question": "How does LoRA's approach to parameter efficiency relate to the scaling challenges described in the Attention Is All You Need paper?",
+        "ground_truth": "Attention Is All You Need introduced the Transformer, whose scaling properties drove model sizes to hundreds of billions of parameters. Full fine-tuning of such models requires updating all parameters, making it prohibitively expensive. LoRA addresses this by observing that weight updates during adaptation have low intrinsic rank — the meaningful change in weight space lies in a low-dimensional subspace. By decomposing updates as low-rank matrices, LoRA achieves adaptation quality comparable to full fine-tuning while updating less than 1% of parameters, making large Transformers practically adaptable without massive compute."
+    },
+    {
+        "question": "How does Firecracker's microVM approach differ from Linux containers in terms of isolation and performance?",
+        "ground_truth": "Isolation: Firecracker provides VM-level hardware isolation via KVM, meaning each workload runs in a separate virtual machine with its own kernel. Linux containers share the host kernel — a kernel vulnerability can affect all containers. Firecracker is confident enough in its isolation to co-locate workloads from different tenants on the same hardware. Performance: Firecracker boots in under 125ms, has under 5MB memory overhead per VM, and negligible CPU overhead. Block IO and network have some overhead versus containers. The tradeoff is stronger multi-tenant security guarantees at the cost of slightly higher resource overhead compared to containers."
+    },
+    {
+        "question": "How does the RAG approach complement the limitations of the transformer architecture described in Attention Is All You Need?",
+        "ground_truth": "Transformers (Attention Is All You Need) store knowledge in parametric weights fixed at training time, cannot access information beyond their training cutoff, and have quadratic attention complexity that limits context length. RAG complements these limitations by externalizing knowledge into a retrieval index that can be updated independently of the model, allowing access to current information without retraining. Retrieved documents provide focused context, reducing the need for extremely long input sequences. RAG also reduces hallucination by grounding generation in retrieved evidence rather than relying solely on parametric memory that may be stale or incorrect."
+    }
+]
